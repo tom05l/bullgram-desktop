@@ -26,13 +26,18 @@ jobs:
       - name: Free disk space
         shell: pwsh
         run: |
-          Remove-Item "C:\Android\android-sdk","C:\Program Files\dotnet","C:\Miniconda","C:\msys64","C:\Program Files\PostgreSQL","C:\Program Files\MongoDB","C:\Program Files\MySQL","C:\ghcup","C:\Program Files\LLVM","C:\vcpkg","C:\selenium","C:\SeleniumWebDrivers","C:\ProgramData\Package Cache" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Android\android-sdk","C:\Program Files\dotnet","C:\Miniconda","C:\msys64","C:\Program Files\PostgreSQL","C:\Program Files\MongoDB","C:\Program Files\MySQL","C:\ghcup","C:\Program Files\LLVM","C:\vcpkg","C:\selenium","C:\SeleniumWebDrivers","C:\ProgramData\Package Cache","C:\Program Files\Docker","C:\Program Files\Google\Chrome","C:\Program Files\Mozilla Firefox","C:\Program Files (x86)\Microsoft SDKs\Azure","C:\Program Files\Microsoft SDKs\Azure","C:\Julia","C:\R","C:\hostedtoolcache\windows\go","C:\hostedtoolcache\windows\Ruby","C:\hostedtoolcache\windows\PyPy","C:\hostedtoolcache\windows\CodeQL","C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk","C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}
           exit 0
 
       - name: Prepare directories
         run: |
-          mkdir %userprofile%\TBuild\Libraries
-          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          rem Debug+Release of every library does not fit on C:; use D: when the runner has it.
+          set ROOT=%userprofile%\TBuild
+          if exist D:\ set ROOT=D:\TBuild
+          mkdir %ROOT%\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %ROOT%
+          echo Build root: %ROOT%
           echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
           echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
 
@@ -86,6 +91,7 @@ jobs:
         run: |
           set CARGO_INCREMENTAL=0
           %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent
+          powershell -Command "Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}"
 
       - name: Free library sources
         shell: bash
