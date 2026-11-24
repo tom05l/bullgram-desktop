@@ -1,0 +1,130 @@
+name: Bullgram Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [bullgram]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: win-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - name: Free disk space
+        shell: pwsh
+        run: |
+          Remove-Item "C:\Android\android-sdk","C:\Program Files\dotnet","C:\Miniconda","C:\msys64","C:\Program Files\PostgreSQL","C:\Program Files\MongoDB","C:\Program Files\MySQL","C:\ghcup","C:\Program Files\LLVM","C:\vcpkg","C:\selenium","C:\SeleniumWebDrivers","C:\ProgramData\Package Cache" -Recurse -Force -ErrorAction SilentlyContinue
+          exit 0
+
+      - name: Prepare directories
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+
+      - name: Repo name
+        shell: bash
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}
+
+      - name: First set up
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+          echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+          git config --global user.email "ci@bullgram.local"
+          git config --global user.name "Bullgram CI"
+
+      - uses: Eden-CI/msvc-dev-cmd@master
+        with:
+          arch: x64
+          sdk: ${{ env.SDK }}
+          toolset: '14.44'
+
+      - name: NuGet sources
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: ThirdParty cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.OS }}-third-party-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-third-party-
+
+      - name: Libraries cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.LibrariesPath }}
+          key: ${{ runner.OS }}-x64-libs-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-libs-
+
+      - name: Libraries
+        run: |
+          set CARGO_INCREMENTAL=0
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent
+
+      - name: Free library sources
+        shell: bash
+        run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' -o -path '*/src/wallet_engine/*' ')' -type f ')' -o -empty ')' -delete
+
+      - name: Build Bullgram Desktop
+        run: |
+          cd %TBUILD%\%REPO_NAME%\Telegram
+          call configure.bat x64 ^
+          -D TDESKTOP_API_ID=611335 -D TDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c ^
+          -D CMAKE_CONFIGURATION_TYPES=Release ^
+          -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+          -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          cmake --build ..\out --config Release --parallel
+
+      - name: Package
+        shell: bash
+        run: |
+          OUT="$TBUILD/$REPO_NAME/out/Release"
+          ls -la "$OUT"
+          mkdir -p dist/Bullgram
+          cp "$OUT/Telegram.exe" dist/Bullgram/Bullgram.exe
+          for f in "$OUT"/modules "$OUT"/*.dll; do [ -e "$f" ] && cp -r "$f" dist/Bullgram/ || true; done
+          cp dist/Bullgram/Bullgram.exe dist/Bullgram-Desktop-x64.exe
+          (cd dist && 7z a -tzip Bullgram-Desktop-x64-portable.zip Bullgram >/dev/null)
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bullgram-Desktop-x64
+          path: |
+            dist/Bullgram-Desktop-x64.exe
+            dist/Bullgram-Desktop-x64-portable.zip
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" dist/Bullgram-Desktop-x64.exe dist/Bullgram-Desktop-x64-portable.zip \
+            --repo "$GITHUB_REPOSITORY" --title "Bullgram Desktop ${GITHUB_RUN_NUMBER} (tdesktop 7.4.6, layer 234)" \
+            --notes "Windows x64. Server 141.98.7.179:42000. Auto-update off." --prerelease

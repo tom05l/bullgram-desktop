@@ -116,6 +116,9 @@ void ConfigLoader::enumerate() {
 }
 
 void ConfigLoader::refreshSpecialLoader() {
+	// Bullgram: no DNS-over-HTTPS / Firebase fallback config.
+	_specialLoader.reset();
+	return;
 	if (_proxyEnabled || _instance->isKeysDestroyer()) {
 		_specialLoader.reset();
 		return;
