@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 360
     env:
       PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+      SKIP_DUMPSYMS: "1"  # dump_syms needs ATL, absent on the runner; only for crash symbols
     defaults:
       run:
         shell: cmd
