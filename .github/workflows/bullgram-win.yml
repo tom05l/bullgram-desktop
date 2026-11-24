@@ -84,7 +84,7 @@ jobs:
       - name: Libraries
         run: |
           set CARGO_INCREMENTAL=0
-          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent
 
       - name: Free library sources
         shell: bash
