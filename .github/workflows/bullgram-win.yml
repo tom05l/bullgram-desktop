@@ -33,8 +33,8 @@ jobs:
       - name: Page file
         uses: al-cheb/configure-pagefile-action@v1.4
         with:
-          minimum-size: 16GB
-          maximum-size: 24GB
+          minimum-size: 32GB
+          maximum-size: 48GB
           disk-root: "D:"
 
       - name: Prepare directories
@@ -123,6 +123,12 @@ jobs:
           -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
           cmake --build ..\out --config Release --parallel 1 -- /p:CL_MPCount=2
+          if errorlevel 1 (
+            rem The big qrc/PCH units can run out of commit (C3859/C1076) next to another cl:
+            rem continue the same build one file at a time.
+            set _CL_=/MP1
+            cmake --build ..\out --config Release --parallel 1 -- /p:CL_MPCount=1
+          )
 
       - name: Package
         shell: bash
