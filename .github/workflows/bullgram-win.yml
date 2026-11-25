@@ -30,6 +30,13 @@ jobs:
           Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}
           exit 0
 
+      - name: Page file
+        uses: al-cheb/configure-pagefile-action@v1.4
+        with:
+          minimum-size: 16GB
+          maximum-size: 24GB
+          disk-root: "D:"
+
       - name: Prepare directories
         run: |
           rem Debug+Release of every library does not fit on C:; use D: when the runner has it.
@@ -81,7 +88,8 @@ jobs:
           restore-keys: ${{ runner.OS }}-third-party-
 
       - name: Libraries cache
-        uses: actions/cache@v6
+        id: libcache
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}
           key: ${{ runner.OS }}-x64-libs-${{ env.CACHE_KEY }}
@@ -93,6 +101,13 @@ jobs:
           %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent
           powershell -Command "Get-PSDrive -PSProvider FileSystem | Format-Table Name,@{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}"
 
+      - name: Save libraries cache
+        if: steps.libcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}
+          key: ${{ runner.OS }}-x64-libs-${{ env.CACHE_KEY }}
+
       - name: Free library sources
         shell: bash
         run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' -o -path '*/src/wallet_engine/*' ')' -type f ')' -o -empty ')' -delete
@@ -100,12 +115,14 @@ jobs:
       - name: Build Bullgram Desktop
         run: |
           cd %TBUILD%\%REPO_NAME%\Telegram
+          rem /MP over all cores runs cl out of heap (C1060); _CL_ is appended so /MP2 wins.
+          set _CL_=/MP2
           call configure.bat x64 ^
           -D TDESKTOP_API_ID=611335 -D TDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c ^
           -D CMAKE_CONFIGURATION_TYPES=Release ^
           -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
-          cmake --build ..\out --config Release --parallel
+          cmake --build ..\out --config Release --parallel 1 -- /p:CL_MPCount=2
 
       - name: Package
         shell: bash
